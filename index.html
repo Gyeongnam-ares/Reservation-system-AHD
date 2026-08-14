@@ -65,8 +65,15 @@
     padding: 7px 12px; border: 1px solid #D8CFB8; border-radius: 6px; background: #FFFCF5;
     font-size: 13px; cursor: pointer; color: #4F4A38;
   }
-  .date-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-  .date-nav .date-label { font-family: 'Noto Serif KR', serif; font-weight: 700; font-size: 16px; }
+  .date-nav { margin-bottom: 16px; }
+  .date-nav-top {
+    display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 8px;
+  }
+  .date-nav .date-label { font-family: 'Noto Serif KR', serif; font-weight: 700; font-size: 16px; min-width: 130px; text-align: center; }
+  .nav-btn-icon { padding: 6px 12px; font-weight: 700; }
+  .date-nav-bottom { display: flex; align-items: center; gap: 8px; }
+  .date-nav-bottom .input { flex: 1; min-width: 0; }
+  .date-nav-bottom .nav-btn { flex-shrink: 0; }
   .grid-2col { display: grid; grid-template-columns: 340px 1fr; gap: 20px; }
   .grid-2col-rev { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
   @media (max-width: 760px) {
@@ -87,6 +94,35 @@
   .empty-box { text-align: center; padding: 32px 16px; color: #8D8570; font-size: 13.5px; }
   .past-flag { font-size: 11px; font-weight: 700; color: #B25C3E; margin-left: 6px; }
   .processed-by { font-size: 11.5px; color: #8D8570; margin-top: 4px; }
+
+  .view-toggle { display: flex; gap: 4px; background: #EFE7D6; padding: 3px; border-radius: 8px; margin-bottom: 12px; width: fit-content; }
+  .view-toggle button {
+    padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 12.5px; font-weight: 500;
+    background: transparent; color: #4F4A38;
+  }
+  .view-toggle button.active { background: #FFFEFA; color: #2F4A38; font-weight: 700; }
+
+  .cal-wrap { }
+  .cal-header { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 10px; }
+  .cal-month-label { font-family: 'Noto Serif KR', serif; font-weight: 700; font-size: 16px; min-width: 100px; text-align: center; }
+  .cal-weekday-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+  .cal-weekday-row span { text-align: center; font-size: 11.5px; color: #8D8570; font-weight: 500; }
+  .cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+  .cal-cell {
+    aspect-ratio: 1; border: 1px solid #E3DAC5; border-radius: 8px; background: #FFFEFA;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    cursor: pointer; padding: 2px; font-family: inherit;
+  }
+  .cal-cell:hover { border-color: #4C7A52; }
+  .cal-empty { border: none; background: transparent; cursor: default; }
+  .cal-daynum { font-size: 12.5px; color: #2B2E22; }
+  .cal-today { border: 1.5px solid #4C7A52; }
+  .cal-today .cal-daynum { color: #2F4A38; font-weight: 700; }
+  .cal-selected { background: #E7F0DE; border-color: #4C7A52; }
+  .cal-dots { display: flex; gap: 3px; height: 6px; }
+  .cal-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .cal-dot-pending { background: #C98A2C; }
+  .cal-dot-approved { background: #3F7A45; }
   .ledger { border: 1px solid #E3DAC5; border-radius: 10px; overflow: hidden; }
   .ledger-row {
     display: flex; align-items: center; gap: 10px; padding: 8px 14px;
@@ -267,6 +303,8 @@ let mode = "apply";
 let applyDate = todayStr();
 let adminDate = todayStr();
 let adminFilter = "all";
+let applyCalMode = "day";   // "day" | "month"
+let adminCalMode = "day";   // "day" | "month"
 
 /* ---------- Firestore 실시간 구독 ---------- */
 const resQuery = query(collection(db, "reservations"), orderBy("date"), orderBy("startTime"));
@@ -364,14 +402,103 @@ function renderLedger(date, compact) {
   return `<div class="ledger">${rows}</div>`;
 }
 
+/* ---------- 월간 캘린더 뷰 ---------- */
+function dayStats(date) {
+  const list = reservations.filter((r) => r.date === date && r.status !== "rejected");
+  return {
+    pending: list.filter((r) => r.status === "pending").length,
+    approved: list.filter((r) => r.status === "approved").length,
+  };
+}
+
+function monthCells(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const year = d.getFullYear(), month = d.getMonth();
+  const startWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    cells.push(`${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+function renderMonthCalendar(calId, dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const monthLabel = `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  const cells = monthCells(dateStr);
+  const todayS = todayStr();
+
+  let weeksHtml = "";
+  for (let w = 0; w < cells.length / 7; w++) {
+    const weekCells = cells.slice(w * 7, w * 7 + 7).map((c) => {
+      if (!c) return `<div class="cal-cell cal-empty"></div>`;
+      const stats = dayStats(c);
+      const dayNum = Number(c.slice(-2));
+      const cls = ["cal-cell"];
+      if (c === todayS) cls.push("cal-today");
+      if (c === dateStr) cls.push("cal-selected");
+      return `
+        <button class="${cls.join(" ")}" data-date="${c}">
+          <span class="cal-daynum">${dayNum}</span>
+          <span class="cal-dots">
+            ${stats.pending > 0 ? `<span class="cal-dot cal-dot-pending" title="승인 대기 ${stats.pending}건"></span>` : ""}
+            ${stats.approved > 0 ? `<span class="cal-dot cal-dot-approved" title="승인 ${stats.approved}건"></span>` : ""}
+          </span>
+        </button>`;
+    }).join("");
+    weeksHtml += `<div class="cal-week">${weekCells}</div>`;
+  }
+
+  return `
+    <div class="cal-wrap" id="${calId}">
+      <div class="cal-header">
+        <button class="nav-btn nav-btn-icon" data-cal-act="prevMonth" title="이전 달">◀</button>
+        <span class="cal-month-label">${monthLabel}</span>
+        <button class="nav-btn nav-btn-icon" data-cal-act="nextMonth" title="다음 달">▶</button>
+      </div>
+      <div class="cal-weekday-row">${weekdays.map((w) => `<span>${w}</span>`).join("")}</div>
+      ${weeksHtml}
+      <div class="legend" style="margin-top:10px">
+        <span class="legend-item"><span class="cal-dot cal-dot-pending"></span>승인 대기</span>
+        <span class="legend-item"><span class="cal-dot cal-dot-approved"></span>승인됨</span>
+      </div>
+    </div>`;
+}
+
+function wireMonthCalendar(calId, getDate, setDateStayMonth, setDateAndGoDay) {
+  const el = document.getElementById(calId);
+  if (!el) return;
+  el.querySelector('[data-cal-act="prevMonth"]').addEventListener("click", () => {
+    const d = new Date(getDate() + "T00:00:00");
+    d.setMonth(d.getMonth() - 1, 1);
+    setDateStayMonth(d.toISOString().slice(0, 10));
+  });
+  el.querySelector('[data-cal-act="nextMonth"]').addEventListener("click", () => {
+    const d = new Date(getDate() + "T00:00:00");
+    d.setMonth(d.getMonth() + 1, 1);
+    setDateStayMonth(d.toISOString().slice(0, 10));
+  });
+  el.querySelectorAll(".cal-cell[data-date]").forEach((cell) => {
+    cell.addEventListener("click", () => setDateAndGoDay(cell.dataset.date));
+  });
+}
+
 function renderDateNav(navId, date) {
   return `
     <div class="date-nav" id="${navId}">
-      <button class="nav-btn" data-act="prev">◀ 전날</button>
-      <input class="input" style="width:auto" type="date" value="${date}" data-act="pick" />
-      <span class="date-label">${fmtDateLabel(date)}</span>
-      <button class="nav-btn" data-act="next">다음날 ▶</button>
-      <button class="nav-btn" style="margin-left:auto" data-act="today">오늘</button>
+      <div class="date-nav-top">
+        <button class="nav-btn nav-btn-icon" data-act="prev" title="전날" aria-label="전날">◀</button>
+        <span class="date-label">${fmtDateLabel(date)}</span>
+        <button class="nav-btn nav-btn-icon" data-act="next" title="다음날" aria-label="다음날">▶</button>
+      </div>
+      <div class="date-nav-bottom">
+        <input class="input" type="date" value="${date}" data-act="pick" />
+        <button class="nav-btn" data-act="today">오늘</button>
+      </div>
     </div>`;
 }
 
@@ -451,13 +578,19 @@ function renderApplyView() {
       </div>
       <div>
         ${renderDateNav("applyDateNav", applyDate)}
+        <div class="view-toggle">
+          <button data-viewmode="day" class="${applyCalMode === "day" ? "active" : ""}">일간 보기</button>
+          <button data-viewmode="month" class="${applyCalMode === "month" ? "active" : ""}">월간 보기</button>
+        </div>
         <div class="card" style="padding:16px">
-          <div class="legend">
-            ${["pending","approved","rejected"].map(s=>`
-              <span class="legend-item"><span class="legend-swatch" style="background:${STATUS_META[s].bg};border:1px solid ${STATUS_META[s].border}"></span>${STATUS_META[s].label}</span>
-            `).join("")}
-          </div>
-          ${renderLedger(applyDate, false)}
+          ${applyCalMode === "day" ? `
+            <div class="legend">
+              ${["pending","approved","rejected"].map(s=>`
+                <span class="legend-item"><span class="legend-swatch" style="background:${STATUS_META[s].bg};border:1px solid ${STATUS_META[s].border}"></span>${STATUS_META[s].label}</span>
+              `).join("")}
+            </div>
+            ${renderLedger(applyDate, false)}
+          ` : renderMonthCalendar("applyMonthCal", applyDate)}
         </div>
         ${list.length > 0 ? `
           <div style="margin-top:16px">
@@ -476,6 +609,18 @@ function renderApplyView() {
     if (e.target.value < todayStr()) { alert("지난 날짜는 선택할 수 없습니다."); e.target.value = applyDate; return; }
     applyDate = e.target.value; renderApplyView();
   });
+  document.querySelectorAll('#applyView [data-viewmode]').forEach((btn) => {
+    btn.addEventListener("click", () => { applyCalMode = btn.dataset.viewmode; renderApplyView(); });
+  });
+  if (applyCalMode === "month") {
+    wireMonthCalendar("applyMonthCal", () => applyDate,
+      (d) => { applyDate = d; renderApplyView(); },
+      (d) => {
+        if (d < todayStr()) { alert("지난 날짜는 선택할 수 없습니다."); return; }
+        applyDate = d; applyCalMode = "day"; renderApplyView();
+      }
+    );
+  }
   document.getElementById("applyForm").addEventListener("submit", submitReservation);
 }
 
@@ -626,14 +771,29 @@ function renderAdminView() {
       </div>
       <div>
         ${renderDateNav("adminDateNav", adminDate)}
+        <div class="view-toggle">
+          <button data-viewmode="day" class="${adminCalMode === "day" ? "active" : ""}">일간 보기</button>
+          <button data-viewmode="month" class="${adminCalMode === "month" ? "active" : ""}">월간 보기</button>
+        </div>
         ${pendingToday.length > 0 ? `<div class="banner banner-pending">이 날짜에 승인 대기 ${pendingToday.length}건이 있습니다.</div>` : ""}
-        <div class="card" style="padding:16px">${renderLedger(adminDate, true)}</div>
+        <div class="card" style="padding:16px">
+          ${adminCalMode === "day" ? renderLedger(adminDate, true) : renderMonthCalendar("adminMonthCal", adminDate)}
+        </div>
       </div>
     </div>`;
 
   document.getElementById("signOutBtn2").addEventListener("click", () => signOut(auth));
   document.getElementById("csvExportBtn").addEventListener("click", () => exportCsv(list));
   wireDateNav("adminDateNav", () => adminDate, (d) => { adminDate = d; renderAdminView(); });
+  document.querySelectorAll('#adminView [data-viewmode]').forEach((btn) => {
+    btn.addEventListener("click", () => { adminCalMode = btn.dataset.viewmode; renderAdminView(); });
+  });
+  if (adminCalMode === "month") {
+    wireMonthCalendar("adminMonthCal", () => adminDate,
+      (d) => { adminDate = d; renderAdminView(); },
+      (d) => { adminDate = d; adminCalMode = "day"; renderAdminView(); }
+    );
+  }
 
   document.querySelectorAll(".filter-btn").forEach(btn => {
     btn.addEventListener("click", () => { adminFilter = btn.dataset.filter; renderAdminView(); });
