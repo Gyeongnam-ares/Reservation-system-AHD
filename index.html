@@ -579,6 +579,7 @@ function renderResRow(r, actionsHtml, showCheckbox) {
 /* ---------- 신청자 화면 ---------- */
 function renderApplyView() {
   const list = activeDayReservations(applyDate).sort((a,b)=>toMin(a.startTime)-toMin(b.startTime));
+  const formDefaultDate = applyDate < todayStr() ? todayStr() : applyDate;
   const html = `
     <div class="grid-2col">
       <div class="card">
@@ -586,7 +587,7 @@ function renderApplyView() {
         <p class="sub">신청 후 담당자 승인이 완료되면 예약이 확정됩니다.</p>
         <form id="applyForm">
           <label class="field"><span>사용 날짜</span>
-            <input class="input" type="date" id="f-date" value="${applyDate}" min="${todayStr()}" required />
+            <input class="input" type="date" id="f-date" value="${formDefaultDate}" min="${todayStr()}" required />
           </label>
           <div class="row">
             <div><label class="field"><span>시작 시간</span>
@@ -651,11 +652,10 @@ function renderApplyView() {
   });
 
   wireDateNav("applyDateNav", () => applyDate, (d) => {
-    if (d < todayStr()) { alert("지난 날짜는 선택할 수 없습니다."); return; }
     applyDate = d; renderApplyView();
   });
   document.getElementById("f-date").addEventListener("change", (e) => {
-    if (e.target.value < todayStr()) { alert("지난 날짜는 선택할 수 없습니다."); e.target.value = applyDate; return; }
+    if (e.target.value < todayStr()) { alert("지난 날짜는 선택할 수 없습니다.\n(예약 신청은 오늘 이후 날짜만 가능합니다. 지난 날짜의 예약 현황은 위쪽 날짜 이동으로 조회하실 수 있어요.)"); e.target.value = applyDate; return; }
     applyDate = e.target.value; renderApplyView();
   });
   document.querySelectorAll('#applyView [data-viewmode]').forEach((btn) => {
@@ -664,10 +664,7 @@ function renderApplyView() {
   if (applyCalMode === "month") {
     wireMonthCalendar("applyMonthCal", () => applyDate,
       (d) => { applyDate = d; renderApplyView(); },
-      (d) => {
-        if (d < todayStr()) { alert("지난 날짜는 선택할 수 없습니다."); return; }
-        applyDate = d; applyCalMode = "day"; renderApplyView();
-      }
+      (d) => { applyDate = d; applyCalMode = "day"; renderApplyView(); }
     );
   }
   document.getElementById("applyForm").addEventListener("submit", submitReservation);
