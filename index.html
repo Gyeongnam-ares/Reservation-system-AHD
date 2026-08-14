@@ -4,8 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>경남치유농업센터 교육장 예약 대장</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -44,7 +46,10 @@
   label.field span { display: block; font-size: 13px; font-weight: 500; color: #4C5349; margin-bottom: 5px; }
   .input {
     width: 100%; padding: 9px 11px; border: 1px solid #C9CBC0; border-radius: 6px;
-    font-size: 14px; background: #FBFBF8; color: #232921;
+    font-size: 16px; background: #FBFBF8; color: #232921;
+  }
+  @media (min-width: 640px) {
+    .input { font-size: 14px; }
   }
   textarea.input { min-height: 64px; resize: vertical; }
   .row { display: flex; gap: 10px; }
@@ -63,7 +68,22 @@
   .grid-2col-rev { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
   @media (max-width: 760px) {
     .grid-2col, .grid-2col-rev { grid-template-columns: 1fr; }
+    main { padding: 16px !important; }
+    header { padding: 16px 18px !important; }
+    h1 { font-size: 19px !important; }
+    .nav-btn, .filter-btn, .mode-btn { padding: 10px 14px; min-height: 40px; }
+    .submit-btn { padding: 14px; font-size: 15px; }
+    .res-actions button { min-height: 38px; padding: 8px 12px; }
   }
+  .spinner {
+    width: 18px; height: 18px; border: 2px solid #DBDCD4; border-top-color: #1F6F5C;
+    border-radius: 50%; display: inline-block; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-box { display: flex; align-items: center; padding: 20px; color: #6B7268; font-size: 13.5px; }
+  .empty-box { text-align: center; padding: 32px 16px; color: #8A9086; font-size: 13.5px; }
+  .past-flag { font-size: 11px; font-weight: 700; color: #A8442E; margin-left: 6px; }
+  .processed-by { font-size: 11.5px; color: #8A9086; margin-top: 4px; }
   .ledger { border: 1px solid #DBDCD4; border-radius: 8px; overflow: hidden; }
   .ledger-row {
     display: flex; align-items: center; gap: 10px; padding: 8px 14px;
@@ -102,6 +122,10 @@
     background: #FBFBF8; color: #4C5349; font-weight: 500;
   }
   .filter-btn.active { background: #1E2A3D; color: #fff; font-weight: 700; border-color: #1E2A3D; }
+  .csv-btn {
+    padding: 7px 14px; border-radius: 6px; border: 1px solid #1F6F5C; background: #fff;
+    color: #1F6F5C; font-size: 13px; font-weight: 700; cursor: pointer; margin-left: auto;
+  }
   .banner { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; border: 1px solid; }
   .banner-error { background: #F5E3DF; border-color: #A8442E; color: #7A3120; }
   .banner-notice { color: #1E4A34; font-size: 13px; margin-bottom: 10px; }
@@ -144,7 +168,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, collection, addDoc, onSnapshot, doc, updateDoc,
-  query, orderBy, serverTimestamp, getDoc
+  query, orderBy, serverTimestamp, getDoc, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
@@ -204,8 +228,33 @@ const STATUS_META = {
   rejected: { label: "거절됨",   bg: "#F5E3DF", border: "#A8442E", text: "#7A3120" },
 };
 
+function csvCell(v) {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportCsv(list) {
+  if (list.length === 0) { alert("내보낼 예약 데이터가 없습니다."); return; }
+  const headers = ["날짜","시작시간","종료시간","행사명","담당자명","인원","사용목적","상태","거절사유","처리자","처리일시"];
+  const rows = list.map((r) => [
+    r.date, r.startTime, r.endTime, r.eventName, r.manager, r.attendees, r.purpose,
+    STATUS_META[r.status].label, r.rejectReason || "", r.processedBy || "", r.processedAt || "",
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM 포함 - 엑셀 한글 깨짐 방지
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `교육장예약_${todayStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 /* ---------- 전역 상태 ---------- */
 let reservations = [];       // Firestore 실시간 구독 결과
+let dataLoaded = false;      // 최초 데이터 수신 여부 (로딩 화면 표시용)
 let currentUser = null;      // Firebase Auth 사용자
 let isAdmin = false;         // admins 컬렉션에 등록된 이메일인지
 let mode = "apply";
@@ -217,8 +266,10 @@ let adminFilter = "all";
 const resQuery = query(collection(db, "reservations"), orderBy("date"), orderBy("startTime"));
 onSnapshot(resQuery, (snap) => {
   reservations = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  dataLoaded = true;
   renderAll();
 }, (err) => {
+  dataLoaded = true;
   showGlobalBanner(`실시간 데이터를 불러오지 못했습니다: ${err.message}`);
 });
 
@@ -254,6 +305,13 @@ function renderAll() {
   document.getElementById("btnModeAdmin").classList.toggle("active", mode === "admin");
   document.getElementById("applyView").classList.toggle("hidden", mode !== "apply");
   document.getElementById("adminView").classList.toggle("hidden", mode !== "admin");
+
+  if (!dataLoaded) {
+    const loadingHtml = `<div class="card loading-box"><span class="spinner"></span>예약 현황을 불러오는 중입니다…</div>`;
+    document.getElementById("applyView").innerHTML = loadingHtml;
+    document.getElementById("adminView").innerHTML = loadingHtml;
+    return;
+  }
 
   const pendingCount = reservations.filter((r) => r.status === "pending").length;
   const badge = document.getElementById("pendingBadge");
@@ -327,6 +385,7 @@ function wireDateNav(navId, getDate, setDate) {
 
 function renderResRow(r, actionsHtml) {
   const meta = STATUS_META[r.status];
+  const isPastPending = r.status === "pending" && r.date < todayStr();
   return `
     <div class="res-row" data-id="${r.id}">
       <div class="top">
@@ -334,10 +393,12 @@ function renderResRow(r, actionsHtml) {
           <div class="time-badge">
             <span class="time-mono">${r.date} · ${r.startTime}~${r.endTime}</span>
             <span class="status-pill" style="background:${meta.bg};color:${meta.text};border-color:${meta.border}">${meta.label}</span>
+            ${isPastPending ? `<span class="past-flag">⚠ 지난 날짜(처리 필요)</span>` : ""}
           </div>
           <p class="meta">${escapeHtml(r.eventName)} · 담당 ${escapeHtml(r.manager)} · ${r.attendees}명</p>
           <p class="purpose">${escapeHtml(r.purpose)}</p>
           ${r.status === "rejected" && r.rejectReason ? `<p class="reject-reason">거절 사유: ${escapeHtml(r.rejectReason)}</p>` : ""}
+          ${r.status !== "pending" && r.processedBy ? `<p class="processed-by">처리자: ${escapeHtml(r.processedBy)}</p>` : ""}
         </div>
         ${actionsHtml ? `<div class="res-actions">${actionsHtml}</div>` : ""}
       </div>
@@ -542,10 +603,11 @@ function renderAdminView() {
       <div>
         <div class="filter-bar">
           ${filters.map(([k,l]) => `<button class="filter-btn ${adminFilter===k?"active":""}" data-filter="${k}">${l}</button>`).join("")}
+          <button class="csv-btn" id="csvExportBtn">⬇ CSV 내보내기</button>
         </div>
         <div id="adminList">
           ${list.length === 0
-            ? `<div class="card"><p class="muted">해당 조건의 예약이 없습니다.</p></div>`
+            ? `<div class="card empty-box">해당 조건의 예약이 없습니다.</div>`
             : list.map(r => renderResRow(r,
                 r.status === "pending"
                   ? `<button class="btn-approve" data-act="approve" data-id="${r.id}">승인</button><button class="btn-reject" data-act="reject" data-id="${r.id}">거절</button>`
@@ -564,11 +626,14 @@ function renderAdminView() {
     </div>`;
 
   document.getElementById("signOutBtn2").addEventListener("click", () => signOut(auth));
+  document.getElementById("csvExportBtn").addEventListener("click", () => exportCsv(list));
   wireDateNav("adminDateNav", () => adminDate, (d) => { adminDate = d; renderAdminView(); });
 
   document.querySelectorAll(".filter-btn").forEach(btn => {
     btn.addEventListener("click", () => { adminFilter = btn.dataset.filter; renderAdminView(); });
   });
+
+  let processingId = null;
 
   document.getElementById("adminList").addEventListener("click", async (e) => {
     const btn = e.target.closest("button[data-act]");
@@ -577,28 +642,75 @@ function renderAdminView() {
     const act = btn.dataset.act;
     const target = reservations.find(r => r.id === id);
     if (!target) return;
+    if (processingId === id) return; // 같은 건 중복 클릭 방지
 
     if (act === "approve") {
+      // 화면에 보이는 최신 데이터로 1차 확인 (사용자에게 빠른 피드백)
       const conflict = reservations.find(r => r.id !== id && r.date === target.date && r.status === "approved" &&
         overlaps(target.startTime, target.endTime, r.startTime, r.endTime));
       if (conflict) {
         alert(`이미 승인된 다른 예약(${conflict.startTime}~${conflict.endTime}, ${conflict.eventName})과 겹쳐 승인할 수 없습니다.`);
         return;
       }
+      processingId = id;
+      btn.disabled = true;
       try {
-        await updateDoc(doc(db, "reservations", id), { status: "approved", rejectReason: "" });
-      } catch (err) { alert(`승인 처리 중 오류: ${err.message}`); }
+        // 트랜잭션으로 서버의 최신 상태를 다시 확인 후 승인 (여러 담당자가 동시에 처리하는 경우 대비)
+        await runTransaction(db, async (tx) => {
+          const targetRef = doc(db, "reservations", id);
+          const targetSnap = await tx.get(targetRef);
+          if (!targetSnap.exists() || targetSnap.data().status !== "pending") {
+            throw new Error("이미 다른 담당자가 처리한 건입니다. 화면을 새로고침해 주세요.");
+          }
+          if (conflict) {
+            const conflictRef = doc(db, "reservations", conflict.id);
+            const conflictSnap = await tx.get(conflictRef);
+            if (conflictSnap.exists() && conflictSnap.data().status === "approved") {
+              throw new Error("방금 다른 담당자가 겹치는 시간대를 먼저 승인했습니다. 목록을 확인해 주세요.");
+            }
+          }
+          tx.update(targetRef, {
+            status: "approved", rejectReason: "",
+            processedBy: currentUser.email, processedAt: new Date().toISOString(),
+          });
+        });
+      } catch (err) {
+        alert(`승인 처리 중 문제가 발생했습니다: ${err.message}`);
+      } finally {
+        processingId = null;
+        btn.disabled = false;
+      }
     } else if (act === "reject") {
       const reason = window.prompt("거절 사유를 입력해 주세요.", "");
       if (reason === null) return;
       if (!reason.trim()) { alert("거절 사유를 입력해야 합니다."); return; }
+      processingId = id;
+      btn.disabled = true;
       try {
-        await updateDoc(doc(db, "reservations", id), { status: "rejected", rejectReason: reason.trim() });
-      } catch (err) { alert(`거절 처리 중 오류: ${err.message}`); }
+        await updateDoc(doc(db, "reservations", id), {
+          status: "rejected", rejectReason: reason.trim(),
+          processedBy: currentUser.email, processedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        alert(`거절 처리 중 오류: ${err.message}`);
+      } finally {
+        processingId = null;
+        btn.disabled = false;
+      }
     } else if (act === "reopen") {
+      processingId = id;
+      btn.disabled = true;
       try {
-        await updateDoc(doc(db, "reservations", id), { status: "pending", rejectReason: "" });
-      } catch (err) { alert(`처리 중 오류: ${err.message}`); }
+        await updateDoc(doc(db, "reservations", id), {
+          status: "pending", rejectReason: "",
+          processedBy: currentUser.email, processedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        alert(`처리 중 오류: ${err.message}`);
+      } finally {
+        processingId = null;
+        btn.disabled = false;
+      }
     }
   });
 }
