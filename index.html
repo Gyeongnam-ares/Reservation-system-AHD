@@ -262,7 +262,15 @@ const GRID_SLOTS = timeOptions("09:00", "17:30", 30);
 
 function toMin(t) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
 function overlaps(aS, aE, bS, bE) { return toMin(aS) < toMin(bE) && toMin(aE) > toMin(bS); }
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function toDateStr(d) {
+  // 로컬(브라우저) 타임존 기준으로 YYYY-MM-DD를 만듭니다.
+  // toISOString()은 UTC로 변환하기 때문에 한국(UTC+9) 등에서는 날짜가 하루 밀리는 버그가 생겨 사용하지 않습니다.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function todayStr() { return toDateStr(new Date()); }
 function fmtDateLabel(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   const days = ["일", "월", "화", "수", "목", "금", "토"];
@@ -488,12 +496,12 @@ function wireMonthCalendar(calId, getDate, setDateStayMonth, setDateAndGoDay) {
   el.querySelector('[data-cal-act="prevMonth"]').addEventListener("click", () => {
     const d = new Date(getDate() + "T00:00:00");
     d.setMonth(d.getMonth() - 1, 1);
-    setDateStayMonth(d.toISOString().slice(0, 10));
+    setDateStayMonth(toDateStr(d));
   });
   el.querySelector('[data-cal-act="nextMonth"]').addEventListener("click", () => {
     const d = new Date(getDate() + "T00:00:00");
     d.setMonth(d.getMonth() + 1, 1);
-    setDateStayMonth(d.toISOString().slice(0, 10));
+    setDateStayMonth(toDateStr(d));
   });
   el.querySelectorAll(".cal-cell[data-date]").forEach((cell) => {
     cell.addEventListener("click", () => setDateAndGoDay(cell.dataset.date));
@@ -519,11 +527,11 @@ function wireDateNav(navId, getDate, setDate) {
   const el = document.getElementById(navId);
   el.querySelector('[data-act="prev"]').addEventListener("click", () => {
     const d = new Date(getDate() + "T00:00:00"); d.setDate(d.getDate() - 1);
-    setDate(d.toISOString().slice(0, 10));
+    setDate(toDateStr(d));
   });
   el.querySelector('[data-act="next"]').addEventListener("click", () => {
     const d = new Date(getDate() + "T00:00:00"); d.setDate(d.getDate() + 1);
-    setDate(d.toISOString().slice(0, 10));
+    setDate(toDateStr(d));
   });
   el.querySelector('[data-act="today"]').addEventListener("click", () => setDate(todayStr()));
   el.querySelector('[data-act="pick"]').addEventListener("change", (e) => setDate(e.target.value));
