@@ -277,6 +277,10 @@ const STATUS_META = {
   approved: { label: "승인됨",   bg: "#E7F0DE", border: "#3F7A45", text: "#2E5A34" },
   rejected: { label: "거절됨",   bg: "#F6E3D8", border: "#B25C3E", text: "#7A3D24" },
 };
+// 예상하지 못한 상태값(예: 예전 테스트 데이터 등)이 있어도 화면 전체가 멈추지 않도록 안전장치
+function statusMeta(status) {
+  return STATUS_META[status] || { label: status || "알 수 없음", bg: "#EDEAE1", border: "#8D8570", text: "#5C5546" };
+}
 
 function csvCell(v) {
   const s = String(v ?? "");
@@ -288,7 +292,7 @@ function exportCsv(list) {
   const headers = ["날짜","시작시간","종료시간","행사명","담당자명","인원","사용목적","상태","거절사유","처리자","처리일시"];
   const rows = list.map((r) => [
     r.date, r.startTime, r.endTime, r.eventName, r.manager, r.attendees, r.purpose,
-    STATUS_META[r.status].label, r.rejectReason || "", r.processedBy || "", r.processedAt || "",
+    statusMeta(r.status).label, r.rejectReason || "", r.processedBy || "", r.processedAt || "",
   ]);
   const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM 포함 - 엑셀 한글 깨짐 방지
@@ -398,7 +402,7 @@ function renderLedger(date, compact) {
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const rows = GRID_SLOTS.map((slot) => {
     const status = slotStatusFor(date, slot);
-    const meta = status ? STATUS_META[status] : null;
+    const meta = status ? statusMeta(status) : null;
     const isNowLine = isToday && nowMin >= toMin(slot) && nowMin < toMin(slot) + 30;
     return `
       <div class="ledger-row ${compact ? "compact" : ""}" style="background:${meta ? meta.bg : "#FFFFFF"}">
@@ -542,7 +546,7 @@ function managerSearchResultsHtml(query) {
 }
 
 function renderResRow(r, actionsHtml, showCheckbox) {
-  const meta = STATUS_META[r.status];
+  const meta = statusMeta(r.status);
   const isPastPending = r.status === "pending" && r.date < todayStr();
   return `
     <div class="res-row" data-id="${r.id}">
@@ -724,7 +728,7 @@ async function submitReservation(e) {
   const conflict = reservations.find(r =>
     r.date === date && r.status !== "rejected" && overlaps(startTime, endTime, r.startTime, r.endTime));
   if (conflict) {
-    const statusLabel = STATUS_META[conflict.status].label;
+    const statusLabel = statusMeta(conflict.status).label;
     msgEl.innerHTML = `<p class="banner-error" style="font-size:13px">이미 ${statusLabel === "승인됨" ? "승인된" : "신청 접수된(승인 대기 중인)"} 예약(${conflict.startTime}~${conflict.endTime}, ${escapeHtml(conflict.eventName)})과 시간이 겹칩니다. 다른 시간대를 선택해 주세요.</p>`;
     return;
   }
